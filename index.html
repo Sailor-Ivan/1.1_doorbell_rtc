@@ -15,17 +15,6 @@
     <button id="start-btn">Start Doorbell</button>
   </div>
 
-  <div id="profiles-section" style="display: none;">
-    <div class="profile-card">
-      <div class="profile-avatar host-avatar" role="img" aria-label="Host display picture"></div>
-      <span>Host</span>
-    </div>
-    <div class="profile-card">
-      <div class="profile-avatar visitor-avatar" role="img" aria-label="Visitor display picture"></div>
-      <span>Visitor</span>
-    </div>
-  </div>
-
   <div id="homeowner-section" style="display: none;">
     <button id="generate-btn">Generate Doorbell Link / QR</button>
     <p id="link-display">Link will appear here</p>
@@ -43,7 +32,11 @@
     <button id="waiting-btn">I'm Waiting</button>
     <button id="stop-ring-btn" style="display: none;">Stop Ringing</button>
 
-    <div id="chat-history"></div>
+    <div id="chat-stage">
+      <div class="chat-avatar remote-avatar" role="img" aria-label="Other participant display picture"></div>
+      <div id="chat-history"></div>
+      <div class="chat-avatar self-avatar" role="img" aria-label="Your display picture"></div>
+    </div>
 
     <p id="visitor-status">Connecting...</p>
   </div>
