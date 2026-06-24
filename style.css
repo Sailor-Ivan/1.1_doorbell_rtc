@@ -156,7 +156,7 @@ input[readonly] {
   background-color: white;
   background-position: center;
   background-repeat: no-repeat;
-  background-size: 255%;
+  background-size: cover;
   box-shadow: 0 2px 8px rgba(0,0,0,0.16);
   position: absolute;
   z-index: 2;
