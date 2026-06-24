@@ -67,6 +67,20 @@ h1 {
   margin: 4px 0 0;
 }
 
+#multi-photo-buttons {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+#multi-photo-buttons button {
+  font-size: 12px;
+  padding: 6px 10px;
+  margin: 2px;
+}
+
 /* Buttons */
 button {
   background-color: #1a73e8;

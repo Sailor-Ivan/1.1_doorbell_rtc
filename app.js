@@ -91,6 +91,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
   const roomFromUrl = urlParams.get('room');
   const isVisitor = Boolean(roomFromUrl);
+
+  let mySender = isVisitor ? 'visitor' : 'host';
+  if (isVisitor) {
+    let vId = localStorage.getItem('doorbellVisitorId');
+    if (!vId) {
+      vId = 'v' + Math.random().toString(36).substr(2, 8);
+      localStorage.setItem('doorbellVisitorId', vId);
+    }
+    mySender = `visitor-${vId}`;
+  }
   const roomId = roomFromUrl || localStorage.getItem('doorbellRoomId') || generateRoomId();
 
   localStorage.setItem('doorbellRoomId', roomId);
@@ -114,6 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const photoInput = document.getElementById('photo-input');
   const viewPhotoBtn = document.getElementById('view-photo-btn');
   const photoStatus = document.getElementById('photo-status');
+  const multiPhotoButtons = document.getElementById('multi-photo-buttons');
   const chatHistory = document.getElementById('chat-history');
 
   const statusEl = isVisitor ? visitorStatusEl : homeownerStatusEl;
@@ -126,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const activeOscillators = new Set();
   let soundWasEnabled = false;
   const seenMessageIds = new Set();
-  let currentPhotos = { host: null, visitor: null }; // { uploadedAt } or null
+  let currentPhotos = { host: [], visitor: [] }; // arrays of {id, uploadedAt}
 
   startBtn.textContent = isVisitor ? 'Join Doorbell' : 'Start Doorbell';
   document.body.classList.add(isVisitor ? 'visitor-mode' : 'host-mode');
@@ -168,17 +179,36 @@ document.addEventListener('DOMContentLoaded', () => {
     uploadPhotoBtn.disabled = !connected;
     uploadPhotoBtn.textContent = 'Upload photo of where I am';
 
-    // View button
-    const otherPhoto = currentPhotos[otherSide];
-    if (otherPhoto) {
-      viewPhotoBtn.style.display = 'inline-block';
-      viewPhotoBtn.disabled = !connected;
-      viewPhotoBtn.textContent = 'View their photo';
-      photoStatus.textContent = 'Photo available';
+    if (isVisitor) {
+      // Visitor sees host's photo
+      const hostPhoto = currentPhotos['host'];
+      if (hostPhoto && hostPhoto.uploadedAt) {
+        viewPhotoBtn.style.display = 'inline-block';
+        viewPhotoBtn.disabled = !connected;
+        viewPhotoBtn.textContent = 'View host photo';
+        photoStatus.textContent = 'Host photo available';
+      } else {
+        viewPhotoBtn.style.display = 'none';
+        photoStatus.textContent = '';
+      }
+      if (multiPhotoButtons) multiPhotoButtons.innerHTML = '';
     } else {
+      // Host hides single view, uses multi buttons for visitors
       viewPhotoBtn.style.display = 'none';
-      photoStatus.textContent = '';
+      renderMultiVisitorPhotos();
     }
+  }
+
+  function renderMultiVisitorPhotos() {
+    if (isVisitor || !multiPhotoButtons) return;
+    multiPhotoButtons.innerHTML = '';
+    const visitorKeys = Object.keys(currentPhotos).filter(k => k.startsWith('visitor-'));
+    visitorKeys.slice(0, 4).forEach((key, idx) => {
+      const btn = document.createElement('button');
+      btn.textContent = `Visitor ${idx + 1} photo`;
+      btn.onclick = () => showPhoto(key);
+      multiPhotoButtons.appendChild(btn);
+    });
   }
 
   async function enableSound() {
@@ -286,11 +316,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       uploadPhotoBtn.textContent = 'Uploading...';
 
-      const mySide = isVisitor ? 'visitor' : 'host';
       const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/photo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: mySide, image: resizedDataUrl })
+        body: JSON.stringify({ sender: mySender, image: resizedDataUrl })
       });
 
       if (!res.ok) {
@@ -458,7 +487,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      if (data.type !== 'message' && data.type !== 'ring' && data.type !== 'photo' && data.type !== 'photo-expired') return;
+      if (data.type !== 'message' && data.type !== 'ring' && 
+          data.type !== 'photo' && data.type !== 'photo-removed' && data.type !== 'photo-expired') return;
 
       if (data.type === 'message' || data.type === 'ring') {
         if (seenMessageIds.has(data.id)) return;
@@ -477,11 +507,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const mySide = isVisitor ? 'visitor' : 'host';
         if (data.sender === mySide) {
           photoStatus.textContent = 'Your photo uploaded (expires in ~3 min)';
+        } else if (data.sender.startsWith('visitor-')) {
+          photoStatus.textContent = 'New visitor photo available';
         } else {
           photoStatus.textContent = 'New photo available';
         }
-      } else if (data.type === 'photo-expired') {
-        currentPhotos[data.sender] = null;
+      } else if (data.type === 'photo-removed' || data.type === 'photo-expired') {
+        delete currentPhotos[data.sender];
         updatePhotoUI();
         const mySide = isVisitor ? 'visitor' : 'host';
         if (data.sender === mySide) {
@@ -543,48 +575,53 @@ document.addEventListener('DOMContentLoaded', () => {
   async function viewOtherPhoto() {
     if (!connected) return;
 
-    const otherSide = isVisitor ? 'host' : 'visitor';
-    if (!currentPhotos[otherSide]) {
-      alert('No photo available');
-      return;
-    }
-
-    try {
-      viewPhotoBtn.disabled = true;
-      viewPhotoBtn.textContent = 'Loading...';
-
-      const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/photo?sender=${otherSide}`);
-      if (!res.ok) throw new Error('Photo not available or expired');
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-
-      // Simple photo viewer
-      const modal = document.createElement('div');
-      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;';
-      modal.innerHTML = `
-        <div style="background:white;padding:12px;border-radius:8px;max-width:90vw;max-height:90vh;">
-          <img src="${url}" style="max-width:80vw;max-height:70vh;display:block;margin-bottom:12px;border-radius:4px;" />
-          <button style="width:100%">Close</button>
-        </div>
-      `;
-      document.body.appendChild(modal);
-
-      const closeBtn = modal.querySelector('button');
-      const cleanup = () => {
-        URL.revokeObjectURL(url);
-        modal.remove();
+    if (isVisitor) {
+      // Visitor views the host's photo
+      const hostInfo = currentPhotos['host'];
+      if (!hostInfo) {
+        alert('No photo available');
+        return;
+      }
+      try {
+        viewPhotoBtn.disabled = true;
+        viewPhotoBtn.textContent = 'Loading...';
+        await showPhoto('host');
+      } catch (err) {
+        alert('Could not load photo: ' + err.message);
+      } finally {
         viewPhotoBtn.disabled = !connected;
-        viewPhotoBtn.textContent = 'View their photo';
-      };
-      closeBtn.onclick = cleanup;
-      modal.onclick = (e) => { if (e.target === modal) cleanup(); };
-    } catch (err) {
-      alert('Could not load photo: ' + err.message);
-    } finally {
-      viewPhotoBtn.disabled = !connected;
-      viewPhotoBtn.textContent = 'View their photo';
+        viewPhotoBtn.textContent = 'View host photo';
+      }
+    } else {
+      // Host should use the multi buttons instead
+      // This button is hidden for host
     }
+  }
+
+  async function showPhoto(sender) {
+    const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/photo?sender=${sender}`);
+    if (!res.ok) throw new Error('Photo not available or expired');
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    modal.innerHTML = `
+      <div style="background:white;padding:12px;border-radius:8px;max-width:90vw;max-height:90vh;">
+        <img src="${url}" style="max-width:80vw;max-height:70vh;display:block;margin-bottom:12px;border-radius:4px;" />
+        <button style="width:100%">Close</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const closeBtn = modal.querySelector('button');
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+      modal.remove();
+    };
+    closeBtn.onclick = cleanup;
+    modal.onclick = (e) => { if (e.target === modal) cleanup(); };
   }
 
   if (isVisitor) {

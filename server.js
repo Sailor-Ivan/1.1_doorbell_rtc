@@ -63,8 +63,8 @@ function getRoomClients(roomId) {
     rooms.set(roomId, {
       clients: new Set(),
       history: [],
-      photos: { host: null, visitor: null },
-      photoTimeouts: { host: null, visitor: null }
+      photos: {},  // sender -> {data, mime, uploadedAt}  e.g. 'host' or 'visitor-abc123'
+      photoExpiries: {}  // sender -> timeout
     });
   }
   return rooms.get(roomId);
@@ -85,7 +85,7 @@ function broadcast(roomId, data) {
   }
 }
 
-function setRoomPhoto(roomId, sender, dataUrl) {
+function addRoomPhoto(roomId, sender, dataUrl) {
   const room = rooms.get(roomId);
   if (!room) return;
 
@@ -95,21 +95,44 @@ function setRoomPhoto(roomId, sender, dataUrl) {
   const mime = match[1];
   const base64 = dataUrl;
 
-  // Clear previous timeout
-  if (room.photoTimeouts[sender]) {
-    clearTimeout(room.photoTimeouts[sender]);
+  // Clear previous for this sender
+  if (room.photoExpiries[sender]) {
+    clearTimeout(room.photoExpiries[sender]);
   }
 
   const uploadedAt = new Date().toISOString();
   room.photos[sender] = { data: base64, mime, uploadedAt };
 
+  // If this is a new visitor and >4 visitor photos, evict oldest
+  if (sender.startsWith('visitor-')) {
+    const vKeys = Object.keys(room.photos).filter(k => k.startsWith('visitor-'));
+    if (vKeys.length > 4) {
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      vKeys.forEach(k => {
+        const t = new Date(room.photos[k].uploadedAt).getTime();
+        if (t < oldestTime) {
+          oldestTime = t;
+          oldestKey = k;
+        }
+      });
+      if (oldestKey) {
+        if (room.photoExpiries[oldestKey]) {
+          clearTimeout(room.photoExpiries[oldestKey]);
+          delete room.photoExpiries[oldestKey];
+        }
+        delete room.photos[oldestKey];
+        broadcast(roomId, { type: 'photo-removed', sender: oldestKey });
+      }
+    }
+  }
+
   broadcast(roomId, { type: 'photo', sender, uploadedAt });
 
-  // Auto-expire after 3 minutes
-  room.photoTimeouts[sender] = setTimeout(() => {
-    room.photos[sender] = null;
-    room.photoTimeouts[sender] = null;
-    broadcast(roomId, { type: 'photo-expired', sender });
+  room.photoExpiries[sender] = setTimeout(() => {
+    delete room.photos[sender];
+    delete room.photoExpiries[sender];
+    broadcast(roomId, { type: 'photo-removed', sender });
   }, 3 * 60 * 1000);
 }
 
@@ -120,10 +143,10 @@ function getRoomPhoto(roomId, sender) {
   const photo = room.photos[sender];
   const age = Date.now() - new Date(photo.uploadedAt).getTime();
   if (age > 3 * 60 * 1000) {
-    room.photos[sender] = null;
-    if (room.photoTimeouts[sender]) {
-      clearTimeout(room.photoTimeouts[sender]);
-      room.photoTimeouts[sender] = null;
+    delete room.photos[sender];
+    if (room.photoExpiries[sender]) {
+      clearTimeout(room.photoExpiries[sender]);
+      delete room.photoExpiries[sender];
     }
     return null;
   }
@@ -179,13 +202,13 @@ function handleEventStream(roomId, req, res) {
     res.write(`data: ${JSON.stringify(message)}\n\n`);
   }
 
-  // Send current photos if available
-  if (room.photos.host) {
-    res.write(`data: ${JSON.stringify({ type: 'photo', sender: 'host', uploadedAt: room.photos.host.uploadedAt })}\n\n`);
-  }
-  if (room.photos.visitor) {
-    res.write(`data: ${JSON.stringify({ type: 'photo', sender: 'visitor', uploadedAt: room.photos.visitor.uploadedAt })}\n\n`);
-  }
+  // Send current photos for all active senders
+  Object.keys(room.photos || {}).forEach(key => {
+    const p = room.photos[key];
+    if (p) {
+      res.write(`data: ${JSON.stringify({ type: 'photo', sender: key, uploadedAt: p.uploadedAt })}\n\n`);
+    }
+  });
 
   const heartbeat = setInterval(() => {
     res.write(': heartbeat\n\n');
@@ -255,7 +278,12 @@ async function handlePhotoUpload(roomId, req, res) {
   try {
     // Allow much larger body for images (base64 encoded)
     const data = await readJsonBody(req, 8 * 1024 * 1024); // ~8MB max JSON body (supports up to ~5-6MB images)
-    const sender = data.sender === 'host' ? 'host' : 'visitor';
+    let sender = data.sender;
+    if (!sender) sender = 'visitor';
+    // Preserve unique visitor ids like 'visitor-abc123' sent by client; only normalize unknown
+    if (sender !== 'host' && !sender.startsWith('visitor-')) {
+      sender = 'visitor';
+    }
 
     if (!data.image || typeof data.image !== 'string') {
       sendJson(res, 400, { error: 'image (data URL) is required' });
@@ -276,7 +304,7 @@ async function handlePhotoUpload(roomId, req, res) {
       return;
     }
 
-    setRoomPhoto(roomId, sender, data.image);
+    addRoomPhoto(roomId, sender, data.image);
     sendJson(res, 200, { ok: true });
   } catch (error) {
     sendJson(res, 400, { error: error.message });
