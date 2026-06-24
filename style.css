@@ -133,7 +133,7 @@ input[readonly] {
 
 /* Message container */
 #chat-stage {
-  margin: 54px 0 46px;
+  margin: 72px 0 64px;
   position: relative;
 }
 
@@ -141,7 +141,7 @@ input[readonly] {
   background: white;
   border: 1px solid #ddd;
   border-radius: 8px;
-  padding: 15px;
+  padding: 38px 18px 42px;
   min-height: 150px;
   max-height: 350px;
   overflow-y: auto;
@@ -163,13 +163,13 @@ input[readonly] {
 }
 
 .remote-avatar {
-  top: -42px;
-  left: 12px;
+  top: -62px;
+  left: 18px;
 }
 
 .self-avatar {
-  right: 12px;
-  bottom: -42px;
+  right: 18px;
+  bottom: -62px;
 }
 
 .host-mode .remote-avatar,
