@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let soundWasEnabled = false;
   const seenMessageIds = new Set();
   let currentPhotos = { host: [], visitor: [] }; // arrays of {id, uploadedAt}
+  let lastBellPlay = 0;
 
   startBtn.textContent = isVisitor ? 'Join rooBell' : 'Start rooBell';
   document.body.classList.add(isVisitor ? 'visitor-mode' : 'host-mode');
@@ -296,6 +297,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function playHappyBell() {
+    const now = Date.now();
+    if (now - lastBellPlay < 300) return; // subtle cooldown to prevent double-play
+    lastBellPlay = now;
+
     if (!audioContext) return;
     if (audioContext.state === 'suspended') {
       try { await audioContext.resume(); } catch {}
