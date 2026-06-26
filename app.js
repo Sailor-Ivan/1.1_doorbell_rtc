@@ -107,10 +107,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const startSection = document.getElementById('start-section');
   const startBtn = document.getElementById('start-btn');
+  const startPrompt = document.getElementById('start-prompt');
   const generateBtn = document.getElementById('generate-btn');
+  const printQrBtn = document.getElementById('print-qr-btn');
   const linkDisplay = document.getElementById('link-display');
   const homeownerSection = document.getElementById('homeowner-section');
   const visitorSection = document.getElementById('visitor-section');
+  const hostJumpRow = document.getElementById('host-jump-row');
+  const hostBackRow = document.getElementById('host-back-row');
   const soundSection = document.getElementById('sound-section');
   const homeownerStatusEl = document.getElementById('homeowner-status');
   const visitorStatusEl = document.getElementById('visitor-status');
@@ -191,9 +195,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastBellPlay = 0;
   let keepAliveInterval = null;
   let lastKeepAliveAt = 0;
+  let lastPresenceReplyAt = 0;
   const KEEP_ALIVE_INTERVAL_MS = 4 * 60 * 1000;
 
-  startBtn.textContent = isVisitor ? 'Join rooBell' : 'Start rooBell';
+  startPrompt.textContent = isVisitor ? 'Join rooBell' : 'Start rooBell';
+  startBtn.setAttribute('aria-label', startPrompt.textContent);
   document.body.classList.add(isVisitor ? 'visitor-mode' : 'host-mode');
 
   function setVisitorControlsEnabled(enabled) {
@@ -223,6 +229,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     updatePhotoUI();
+  }
+
+  function markVisitorPresent(data) {
+    if (isVisitor || !data || typeof data.sender !== 'string') return;
+
+    if (data.sender === 'visitor' || data.sender.startsWith('visitor-')) {
+      document.body.classList.add('visitor-present');
+    }
   }
 
   async function sendKeepAlive(force = false) {
@@ -266,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Upload is always available (once connected)
     uploadPhotoBtn.disabled = !connected;
-    uploadPhotoBtn.textContent = 'Upload photo of where I am';
+    uploadPhotoBtn.textContent = 'Take photo of where I am';
 
     if (isVisitor) {
       // Visitor sees host's photo
@@ -445,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
       photoStatus.textContent = '';
     } finally {
       uploadPhotoBtn.disabled = !connected;
-      uploadPhotoBtn.textContent = 'Upload photo of where I am';
+      uploadPhotoBtn.textContent = 'Take photo of where I am';
       photoInput.value = '';
     }
   }
@@ -591,10 +605,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.type === 'presence') {
         if (!isVisitor && data.sender === 'visitor') {
+          markVisitorPresent(data);
           statusEl.textContent = 'Visitor is connected';
         }
         if (isVisitor && data.sender === 'host') {
           statusEl.textContent = 'Host is waiting';
+          const now = Date.now();
+          if (now - lastPresenceReplyAt > 2000) {
+            lastPresenceReplyAt = now;
+            sendRoomEvent(roomId, {
+              sender: 'visitor',
+              type: 'presence'
+            }).catch(() => {});
+          }
         }
         return;
       }
@@ -609,10 +632,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (data.type === 'ring') {
+        markVisitorPresent(data);
         handleRing(data);
       } else if (data.type === 'message') {
+        markVisitorPresent(data);
         renderMessage(chatHistory, data);
       } else if (data.type === 'photo') {
+        markVisitorPresent(data);
         currentPhotos[data.sender] = { uploadedAt: data.uploadedAt };
         updatePhotoUI();
 
@@ -804,6 +830,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  printQrBtn.addEventListener('click', () => {
+    window.print();
+  });
+
   // Photo upload
   uploadPhotoBtn.addEventListener('click', () => {
     if (!connected) return;
@@ -828,16 +858,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (event.key === 'Enter') sendBtn.click();
   });
 
-  startBtn.addEventListener('click', () => {
-    enableSoundQuietly();
+  function enterApp() {
+    document.body.classList.add('app-started');
     startSection.style.display = 'none';
     soundSection.style.display = 'block';
 
     if (isVisitor) {
       homeownerSection.style.display = 'none';
+      hostJumpRow.style.display = 'none';
+      hostBackRow.style.display = 'none';
       visitorSection.style.display = 'block';
     } else {
       homeownerSection.style.display = 'block';
+      hostJumpRow.style.display = 'flex';
+      hostBackRow.style.display = 'flex';
       visitorSection.style.display = 'block';
     }
 
@@ -847,5 +881,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Make sure photo UI reflects current connection + any pre-existing photos
     updatePhotoUI();
+  }
+
+  startBtn.addEventListener('click', () => {
+    if (startSection.classList.contains('is-starting')) return;
+
+    enableSoundQuietly();
+    startSection.classList.add('is-starting');
+    window.setTimeout(enterApp, 220);
   });
 });

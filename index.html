@@ -11,12 +11,19 @@
 <body>
   <div class="app-header">
     <div class="circular-board">
-      <img src="1%20Pictures/7.jpg" alt="rooBell logo">
+      <img src="1%20Pictures/7.png" alt="rooBell logo">
     </div>
   </div>
 
   <div id="start-section">
-    <button id="start-btn">Start rooBell</button>
+    <button id="start-btn" class="start-logo" type="button" aria-label="Start rooBell">
+      <img src="1%20Pictures/7.png" alt="rooBell logo">
+    </button>
+    <p id="start-prompt">Start rooBell</p>
+  </div>
+
+  <div id="host-jump-row" style="display: none;">
+    <a class="host-jump-link" href="#homeowner-section">Go to QR code</a>
   </div>
 
   <div id="visitor-section" style="display: none;">
@@ -51,8 +58,8 @@
     <button id="enable-sound-btn">Enable Sound</button>
 
     <div id="photo-section">
-      <button id="upload-photo-btn">Upload photo of where I am</button>
-      <input type="file" id="photo-input" accept="image/*" style="display: none" />
+      <button id="upload-photo-btn">Take photo of where I am</button>
+      <input type="file" id="photo-input" accept="image/*" capture="environment" style="display: none" />
       <button id="view-photo-btn" style="display: none;">View their photo</button>
       <div id="multi-photo-buttons" style="margin-top: 8px;"></div>
       <p id="photo-status" style="font-size: 13px; color: #666; margin-top: 4px;"></p>
@@ -61,9 +68,14 @@
 
   <div id="homeowner-section" style="display: none;">
     <button id="generate-btn">Generate rooBell Link / QR</button>
+    <button id="print-qr-btn" type="button">Print QR Code</button>
 
     <p id="link-display">Link will appear here</p>
     <div id="qrcode"></div>
+  </div>
+
+  <div id="host-back-row" style="display: none;">
+    <a class="host-jump-link" href="#visitor-section">Back to chat</a>
   </div>
 
   <script src="app.js"></script>
